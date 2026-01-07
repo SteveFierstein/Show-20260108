@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>All Boards</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 10px;
+        background: #f5f5f5;
+    }
+
+    h1 {
+        text-align: center;
+        margin-bottom: 10px;
+    }
+
+    #globalCounts {
+        text-align: center;
+        font-size: 18px;
+        margin-bottom: 20px;
+        font-weight: bold;
+    }
+
+    .board-container {
+        margin-bottom: 40px;
+        background: white;
+        padding: 10px;
+        border-radius: 8px;
+        box-shadow: 0 0 5px rgba(0,0,0,0.1);
+    }
+
+    .board-title {
+        font-size: 20px;
+        margin-bottom: 6px;
+        font-weight: bold;
+    }
+
+    .board-count {
+        font-size: 16px;
+        margin-bottom: 8px;
+        color: #333;
+    }
+
+    .board-wrapper {
+        position: relative;
+        width: 100%;
+        max-width: 500px;
+        margin: auto;
+    }
+
+    .board-img {
+        width: 100%;
+        display: block;
+        border-radius: 6px;
+    }
+
+    .pin {
+        position: absolute;
+        border-radius: 6px;
+        border: none;
+        background: transparent;
+    }
+
+    .pin.selected {
+        border: 2px solid rgba(0, 128, 0, 0.9);
+        background: rgba(0, 255, 0, 0.25);
+    }
+</style>
+</head>
+
+<body>
+
+<h1>All Boards</h1>
+<div id="globalCounts">Loading counts…</div>
+
+<script>
+// Original resolution of all boards
+const ORIGINAL_WIDTH = 4284;
+const ORIGINAL_HEIGHT = 5712;
+
+// Load saved selections
+let savedSelections = JSON.parse(localStorage.getItem("pinSelections") || "{}");
+
+// Save selections
+function saveSelections() {
+    localStorage.setItem("pinSelections", JSON.stringify(savedSelections));
+}
+
+// Global counters
+let globalTotalPins = 0;
+let globalSelectedPins = 0;
+
+// Load manifest.json to get board list
+fetch("boards/manifest.json")
+    .then(r => r.json())
+    .then(boardList => {
+
+        boardList.forEach(boardName => {
+
+            // Create board container
+            const container = document.createElement("div");
+            container.className = "board-container";
+
+            const title = document.createElement("div");
+            title.className = "board-title";
+            title.textContent = boardName;
+            container.appendChild(title);
+
+            // Per-board count display
+            const countDiv = document.createElement("div");
+            countDiv.className = "board-count";
+            countDiv.id = `count-${boardName}`;
+            countDiv.textContent = "Pins: 0 (0 selected)";
+            container.appendChild(countDiv);
+
+            const wrapper = document.createElement("div");
+            wrapper.className = "board-wrapper";
+
+            const img = document.createElement("img");
+            img.className = "board-img";
+            img.loading = "lazy";
+            img.src = `boards/${boardName}.jpeg`;
+
+            wrapper.appendChild(img);
+            container.appendChild(wrapper);
+            document.body.appendChild(container);
+
+            // Load JSON overlay
+            fetch(`boards/${boardName}.json`)
+                .then(r => r.json())
+                .then(data => {
+                    const pins = data.output?.predictions || [];
+
+                    // Count total pins for this board
+                    const totalPins = pins.length;
+                    globalTotalPins += totalPins;
+
+                    // Update per-board count immediately
+                    countDiv.textContent = `Pins: ${totalPins} (0 selected)`;
+
+                    img.onload = () => {
+                        const displayedWidth = img.clientWidth;
+                        const scale = displayedWidth / ORIGINAL_WIDTH;
+
+                        pins.forEach((pin, index) => {
+                            const div = document.createElement("div");
+                            div.className = "pin";
+
+                            // Convert center → top-left before scaling
+                            const left = (pin.x - pin.width / 2) * scale;
+                            const top = (pin.y - pin.height / 2) * scale;
+
+                            div.style.left = left + "px";
+                            div.style.top = top + "px";
+                            div.style.width = (pin.width * scale) + "px";
+                            div.style.height = (pin.height * scale) + "px";
+
+                            // Restore saved selection
+                            if (savedSelections[boardName]?.includes(index)) {
+                                div.classList.add("selected");
+                            }
+
+                            // Tap to toggle
+                            div.addEventListener("click", () => {
+                                const selected = div.classList.toggle("selected");
+
+                                if (!savedSelections[boardName]) {
+                                    savedSelections[boardName] = [];
+                                }
+
+                                if (selected) {
+                                    savedSelections[boardName].push(index);
+                                } else {
+                                    savedSelections[boardName] =
+                                        savedSelections[boardName].filter(i => i !== index);
+                                }
+
+                                saveSelections();
+
+                                // Update per-board selected count
+                                const selectedCount = savedSelections[boardName].length;
+                                countDiv.textContent =
+                                    `Pins: ${totalPins} (${selectedCount} selected)`;
+
+                                // Update global selected count
+                                globalSelectedPins = Object.values(savedSelections)
+                                    .reduce((sum, arr) => sum + arr.length, 0);
+
+                                document.getElementById("globalCounts").textContent =
+                                    `Total pins: ${globalTotalPins} — Selected: ${globalSelectedPins}`;
+                            });
+
+                            wrapper.appendChild(div);
+                        });
+
+                        // After pins load, update global counts
+                        globalSelectedPins = Object.values(savedSelections)
+                            .reduce((sum, arr) => sum + arr.length, 0);
+
+                        document.getElementById("globalCounts").textContent =
+                            `Total pins: ${globalTotalPins} — Selected: ${globalSelectedPins}`;
+                    };
+                });
+        });
+    });
+</script>
+
+</body>
+</html>
